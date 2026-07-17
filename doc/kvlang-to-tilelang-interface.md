@@ -1,183 +1,218 @@
-# kvlang → TileLang 接口设计方案
+# kvlang → TileLang 输入接口
 
 > kvlang 是唯一编程界面。TileLang 代码永远由 compile 模块自动生成。
-> 本文定义 TileLang 需要 kvlang 提供什么输入，以及 kvlang 如何提供。
 
-## 一、职责边界
-
-```
-┌─ kvlang ────────────────────────────────────────┐
-│                                                  │
-│  kv 代码 (人/Agent 手写):                         │
-│    def inference(x, W, b) -> (out) {              │
-│        tensor.matmul(x, W) -> tmp1               │
-│        tensor.add(tmp1, b) -> tmp2               │
-│        tensor.relu(tmp2)  -> out                 │
-│    }                                             │
-│                                                  │
-│  掌控一切:                                        │
-│  ├── 模型结构: kv 代码 = DAG 定义                 │
-│  ├── 输入参数: tensor.new 时确定 shape/dtype      │
-│  ├── tensor 生命周期: heap-plat 管理              │
-│  └── 调度决策: 何时编译、用哪个后端               │
-│                                                  │
-│  compile 模块 ──→ 识别融合组 ──→ 生成 TileLang 代码│
-│                                                  │
-└──────────────────────┬───────────────────────────┘
-                       │ 编译请求
-                       ▼
-┌─ TileLang ──────────────────────────────────────┐
-│                                                  │
-│  只做一件事: 给定 op 序列 + shape/dtype           │
-│            → 编译为 GPU kernel (.so)              │
-│                                                  │
-│  不需要知道:                                      │
-│  ├── kvspace 路径                                │
-│  ├── vthread / PC / 调度                         │
-│  ├── 控制流 (if/while)                           │
-│  └── tensor 生命周期 (谁分配的、何时释放)          │
-│                                                  │
-└──────────────────────────────────────────────────┘
-```
-
-## 二、TileLang 需要什么输入
-
-TileLang 编译器是纯函数：**输入 op 序列 + shape/dtype → 输出 .so**。
-
-| 输入 | 来源 | 说明 |
-|------|------|------|
-| **op 序列** | kvlang AST（lower 后读写码 IR） | 如 `[matmul, add, relu]` |
-| **tensor shapes** | heap-plat 写入 kvspace 的 meta | `{x: [M,K], W: [K,N], b: [1,N]}` |
-| **tensor dtypes** | heap-plat meta | `float16` / `bfloat16` / `float32` |
-| **accum dtype** | kvlang 标注或默认规则 | matmul 累积通常 `float32` |
-| **内存指针** | heap-plat 返回的 GPU 地址 | **仅运行时传入，编译时不需要** |
-
-### 2.1 编译时输入（确定 kernel 结构）
+## 一、定位
 
 ```
-kvlang compile 模块从 kvspace 读取:
+kvlang:  计算平台的中央调度执行器
+         由 kv 代码定义并掌控一切:
+           - 模型结构 (DAG)
+           - 输入参数 (shape / dtype)
+           - tensor 生命周期 (heap-plat)
+           - 跨进程显存管理 (shm ptr)
+           - 分布式拓扑 (node IP / GPU ID)
+           - 调度决策 (何时编译、选哪个后端)
 
-  /heap/tensor/x/meta    → {shape: [512, 256], dtype: "float16", address: {shm_name: "x_shm"}}
-  /heap/tensor/W/meta    → {shape: [256, 512], dtype: "float16", address: {shm_name: "W_shm"}}
-  /heap/tensor/b/meta    → {shape: [512],     dtype: "float16", address: {shm_name: "b_shm"}}
-
-提取 shape + dtype → 填入 TileLang 模板:
-
-  M, K = 512, 256   ← x.shape
-  K, N = 256, 512   ← W.shape
-  dtype = "float16"
-
-生成 kernel 签名:
-  A: T.Tensor((M, K), dtype)     ← x
-  B: T.Tensor((K, N), dtype)     ← W
-  bias: T.Tensor((N,), dtype)    ← b
-  C: T.Tensor((M, N), dtype)     ← out
+TileLang: GPU kernel 编译器
+          输入: op 序列 + shape + dtype → 输出: kernel_lib.so
+          完全被动，不感知 kvspace、调度、分布式
 ```
 
-### 2.2 运行时输入（执行 kernel）
+## 二、kvlang 掌控的全部信息
 
-```
-kvlang dispatch 时，从 heap-plat meta 读取 GPU 地址:
+kv 代码描述了完整的模型计算图。以一段 kv 代码为例：
 
-  x_shm_ptr  = 0x7f...   ← /heap/tensor/x/meta.address.shm_ptr
-  W_shm_ptr  = 0x7f...   ← /heap/tensor/W/meta.address.shm_ptr
-  b_shm_ptr  = 0x7f...   ← /heap/tensor/b/meta.address.shm_ptr
-  out_shm_ptr = 0x7f...  ← heap-plat 新分配的
-
-传给 kernel:
-  mod(x_shm_ptr, W_shm_ptr, b_shm_ptr, out_shm_ptr, cuda_stream)
-```
-
-Triton/TileLang 完全不感知 kvspace 路径。
-
-## 三、kvlang 如何提供这些输入
-
-### 3.1 shape/dtype 的来源: heap-plat meta
-
-```
-tensor.new("f32", "[512,256]") -> /data/x
-        │
-        ▼  heap-plat 进程:
-  cudaMalloc → 分配 GPU 显存
-  SET /heap/tensor/x/meta = {
-    shape: [512, 256],
-    dtype: "float16",
-    byte_size: 262144,
-    device: "gpu0",
-    address: {shm_name: "x_shm_0", ptr: 0x7f1234000000, node: "n1"}
-  }
-```
-
-kvlang VM 不管理显存，compile 模块只需读 `/heap/tensor/<path>/meta` 即可获得 shape/dtype/ptr。
-
-### 3.2 op 序列的来源: AST 模式匹配
-
-compile 模块扫描已 lower 的 AST，识别连续 tensor op 段：
-
-```go
-// internal/compile/pattern.go
-
-func matchFusion(stmts []ast.Stmt) (*FusionGroup, int) {
-    // 贪心匹配: 从当前 stmt 开始，尽可能长的 tensor op 序列
-    for i, stmt := range stmts {
-        if !isTensorOp(stmt.Opcode) {
-            return nil, i  // 遇到非 tensor op → 切断
-        }
-    }
-    ops := extractOps(stmts)
-    pattern := patternDB.Match(ops)  // [matmul, add, relu] → "linear_relu"
-    if pattern == nil {
-        return nil, 0  // 无匹配 → 逐 op fallback
-    }
-    return &FusionGroup{Pattern: pattern, Ops: ops}, len(ops)
+```kv
+// 模型结构 — kv 代码即 DAG 定义
+def inference(x, W, b) -> (out) {
+    tensor.matmul(x, W) -> tmp1
+    tensor.add(tmp1, b) -> tmp2
+    tensor.relu(tmp2)  -> out
 }
 ```
 
-### 3.3 融合决策时机: 首次执行
-
-kvlang 不在 parse 时编译，在**首次 CALL 时 lazy compile**：
+tensor.new 由 heap-plat 消费，执行后在 kvspace 留下完整 meta：
 
 ```
-Execute: CALL inference(x, W, b)
-  │
-  ├─ 检查 /func/inference_triton 是否存在?
-  │   ├─ 存在 → 直接 CALL 编译版本 ✅
-  │   └─ 不存在 → 进入编译流程
-  │
-  └─ compile 模块:
-      1. 读 AST → 识别融合组
-      2. 读 heap-plat meta → 获取 shape/dtype
-      3. 生成 TileLang Python → subprocess 编译
-      4. 缓存 kernel_lib.so → kvspace
-      5. 改写 AST: tensor op 组 → call inference_triton
-      6. 执行编译版本
+kvlang 代码:  tensor.new("f16", "[512,256]") -> /data/x, gpu=0
+
+         │  heap-plat 进程: cudaMalloc → 分配 GPU 0 显存
+         ▼
+kvspace /heap/tensor/data/x:
+  {
+    "shape":    [512, 256],
+    "dtype":    "float16",
+    "byte_size": 262144,
+    "device":   "gpu",
+    "gpu_id":   0,
+    "node_ip":  "10.0.0.1",
+    "address": {
+      "shm_name": "/deepx_shm_x_0",
+      "ptr":      0x7f1234000000,
+      "offset":   0
+    }
+  }
 ```
 
-缓存命中的后续调用零编译开销。
+compile 模块从 kvspace 读这些 meta，提取 TileLang 需要的部分。
 
-## 四、输入格式总结
+## 三、TileLang 需要什么
 
-TileLang 编译子进程接收的是一个简单 JSON，不是 kvlang 代码：
+### 3.1 编译时输入：shape + dtype + op 序列
+
+这三者完全确定 kernel 的结构。TileLang 不需要 kvspace 路径、节点 IP、GPU ID、ptr。
+
+```
+从 kvspace /heap/tensor/<path>/meta 提取:
+
+  路径         → compile 模块内部映射
+  shape        → TileLang 模板占位符 M, N, K
+  dtype        → "float16" / "bfloat16"
+  accum_dtype  → 由规则推导 (matmul 积分为 float32)
+
+从 kvlang AST 提取:
+
+  op 序列      → 模式匹配 [matmul, add, relu] → "linear_relu"
+```
+
+### 3.2 运行时输入：GPU 显存裸指针
+
+编译完成后的 kernel 只接受裸指针 + CUDA stream：
+
+```
+运行时 kvlang dispatch:
+
+  /heap/tensor/data/x/meta.address.ptr   → 0x7f1234000000
+  /heap/tensor/data/W/meta.address.ptr   → 0x7f1235000000
+  /heap/tensor/data/b/meta.address.ptr   → 0x7f1236000000
+  /heap/tensor/data/out/meta.address.ptr → 0x7f1237000000  (新分配)
+
+  dlopen(kernel_lib.so)
+  kernel_fn(x_ptr, W_ptr, b_ptr, out_ptr, cuda_stream)
+
+TileLang 编译产物永远不知道:
+  - 这些指针来自哪个节点
+  - kvspace 路径是什么
+  - tensor 的生命周期由谁管理
+```
+
+## 四、kvlang → TileLang 编译请求格式
+
+compile 模块组装 JSON，通过 subprocess stdin 传给 TileLang 编译进程：
 
 ```json
-// kvlang → subprocess stdin
 {
   "func": "__fusion_0",
   "pattern": "linear_relu",
+  "ops": ["matmul", "add", "relu"],
   "inputs": [
-    {"name": "x", "shape": [512, 256], "dtype": "float16"},
-    {"name": "W", "shape": [256, 512], "dtype": "float16"},
-    {"name": "b", "shape": [512],      "dtype": "float16"}
+    {"shape": [512, 256], "dtype": "float16"},
+    {"shape": [256, 512], "dtype": "float16"},
+    {"shape": [512],      "dtype": "float16"}
   ],
   "outputs": [
-    {"name": "out", "shape": [512, 512], "dtype": "float16"}
-  ]
+    {"shape": [512, 512], "dtype": "float16"}
+  ],
+  "accum_dtype": "float32"
 }
 ```
 
 TileLang 编译进程：
-1. 读 JSON → 选模板 → 填 shape/dtype → 生成 `@T.prim_func`
-2. `tilelang.compile()` → `.so`
-3. 输出二进制到 stdout，kvlang 捕获后写入 kvspace
 
-kvlang 端只需要维护约 10-20 个模式模板，每个模板是一个带占位符的 Python 字符串。
+```
+1. 读 JSON → 选模式模板
+2. 填入 shape/dtype → 生成 @T.prim_func Python 代码
+3. tilelang.compile() → kernel_lib.so
+4. base64(.so) → stdout
+5. kvlang 捕获 → SET kvspace /func/__fusion_0_triton
+```
+
+## 五、kvspace 中的 tensor meta 规范
+
+heap-plat 写入的 meta 是单一真源。compile 模块和 dispatch 模块都读它：
+
+```
+/heap/tensor/<path>/meta:
+  shape       []int         必然存在，编译时必须
+  dtype       string        必然存在，编译时必须
+  byte_size   int64         运行时校验
+  device      string        "gpu" / "cpu"
+  gpu_id      int           多 GPU 调度时选择
+  node_ip     string        分布式时跨节点路由
+  address:
+    shm_name  string        跨进程共享内存名
+    ptr       uint64        本地进程可直接 cast 的 GPU 虚拟地址
+    offset    int64         大 tensor 分片的偏移
+```
+
+编译时只用 shape + dtype。运行时用 ptr + gpu_id。
+
+## 六、compile 模块在 kvlang 中的位置
+
+```
+kvlang/
+├── internal/compile/
+│   ├── DESIGN.md
+│   ├── compile.go         # 入口: Fuse(*ast.File) → *ast.File
+│   ├── pattern.go         # 融合模式库 (10-20 个), 匹配 + 注册
+│   ├── codegen.go         # 根据模式 + shape/dtype 生成 TileLang Python
+│   └── invoke.go          # subprocess: python compile_worker.py < JSON
+│
+compile 在 lower 之后、WriteBody 之前运行:
+  AST (lower 后) → compile.Fuse() → AST (tensor 组替换为 call)
+                                     │
+                                     ▼
+                               WriteBody → kvspace
+```
+
+### 模式库示例
+
+```go
+var patterns = []FusionPattern{
+    {
+        Name:    "linear_relu",
+        Ops:     []string{"tensor.matmul", "tensor.add", "tensor.relu"},
+        MinOps:  3,
+    },
+    {
+        Name:    "linear",
+        Ops:     []string{"tensor.matmul", "tensor.add"},
+        MinOps:  2,
+    },
+    {
+        Name:    "matmul",
+        Ops:     []string{"tensor.matmul"},
+        MinOps:  1,
+    },
+    // ... 持续扩展
+}
+```
+
+TileLang 的 Python 模板代码存放在 `internal/compile/templates/` 目录，每模式一个 `.py.tmpl` 文件，compile 模块用 Go `text/template` 渲染 shape/dtype 占位符。
+
+## 七、生命周期：lazy compile + cache
+
+```
+首次 CALL inference(x, W, b):
+  /func/inference_triton 不存在?
+    → compile.Fuse() → 生成 TileLang Python → subprocess 编译
+    → kernel_lib.so → /func/inference_triton
+    → 改写 AST: tensor op 组 → call inference_triton
+    → 执行
+
+后续 CALL:
+  /func/inference_triton 存在 → 直接 dispatch
+    读 heap-plat meta → 取 ptr
+    dlopen(.so) → kernel_fn(ptr...) → done
+```
+
+shape 变化时（同一函数、不同 batch size）：
+
+```
+inference(x_512, W, b)  → kernel(M=512, K=256, N=512) → cache hit
+inference(x_256, W, b)  → kernel(M=256, K=256, N=512) → recompile (shape 不同)
+inference(x_512, W, b)  → kernel(M=512, K=256, N=512) → cache hit
+```
+
+shape 是编译时的参数，只要 shape 变化就需要重新编译。kvspace 中以 shape hash 为 key 缓存多个编译版本。
