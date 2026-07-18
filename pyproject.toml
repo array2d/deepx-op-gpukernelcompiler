@@ -1,0 +1,17 @@
+[project]
+name = "deepx-op-gpukernelcompiler"
+version = "0.1.0"
+description = "GPU kernel compiler for kvlang tensor ops — TileLang backend"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "tilelang",
+    "kvlang-py",
+]
+
+[project.scripts]
+op-gpu = "deepx_op_gpukernelcompiler.workflow:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"

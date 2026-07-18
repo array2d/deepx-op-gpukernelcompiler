@@ -1,16 +1,13 @@
 """
-kvfunc: read kvlang compiled functions from kvspace.
+kvfunc: read kvlang compiled functions from kvspace via kvspace-py.
 
 A kvlang function is stored as instruction-addressable slots:
   /func/<pkg>/<name>          = signature string
   /func/<pkg>/<name>/[i,0]   = opcode (string)
   /func/<pkg>/<name>/[i,-j]  = j-th read operand path
   /func/<pkg>/<name>/[i,j]   = j-th write slot path
-
-This module is the op-gpu side adapter — it understands kvlang's /func/
-layout and wraps kvspace-py's generic KVSpace client.
 """
-from kvspace import KVSpace, connect, ErrNotFound
+from kvspace import KVSpace, ErrNotFound
 
 
 def read_func(kv: KVSpace, path: str) -> dict:
@@ -25,33 +22,20 @@ def read_func(kv: KVSpace, path: str) -> dict:
         opcode = _get_str(kv, f"{path}/[{i},0]")
         if opcode is None:
             break
-        reads = []
+        reads, writes = [], []
         j = 1
-        while True:
-            r = _get_str(kv, f"{path}/[{i},-{j}]")
-            if r is None:
-                break
-            reads.append(r)
-            j += 1
-        writes = []
+        while (r := _get_str(kv, f"{path}/[{i},-{j}]")) is not None:
+            reads.append(r); j += 1
         j = 1
-        while True:
-            w = _get_str(kv, f"{path}/[{i},{j}]")
-            if w is None:
-                break
-            writes.append(w)
-            j += 1
+        while (w := _get_str(kv, f"{path}/[{i},{j}]")) is not None:
+            writes.append(w); j += 1
         ops.append({"op": opcode, "reads": reads, "writes": writes})
         i += 1
     return {"signature": sig, "ops": ops}
 
 
 def list_funcs(kv: KVSpace, prefix: str = "/func/fusion_cases") -> list:
-    """List function names under a prefix.
-
-    Filters out instruction slots ([i,j] subkeys), returns only
-    entries with a string signature.
-    """
+    """List function names under a kvspace prefix (filtering instruction slots)."""
     try:
         children = kv.list(prefix)
     except ErrNotFound:
@@ -60,9 +44,8 @@ def list_funcs(kv: KVSpace, prefix: str = "/func/fusion_cases") -> list:
     for c in children:
         if c.startswith("["):
             continue
-        path = f"{prefix}/{c}"
         try:
-            if kv.get(path).kind == "string":
+            if kv.get(f"{prefix}/{c}").kind == "string":
                 funcs.append(c)
         except ErrNotFound:
             pass
