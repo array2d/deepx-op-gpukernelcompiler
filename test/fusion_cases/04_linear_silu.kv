@@ -1,0 +1,5 @@
+def linear_silu(x, W, b) -> (out) {
+    tensor.matmul(x, W) -> tmp
+    tensor.add(tmp, b)  -> tmp2
+    tensor.silu(tmp2)   -> out
+}

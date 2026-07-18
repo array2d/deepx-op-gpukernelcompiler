@@ -1,0 +1,4 @@
+def linear(x, W, b) -> (out) {
+    tensor.matmul(x, W) -> tmp
+    tensor.add(tmp, b)  -> out
+}

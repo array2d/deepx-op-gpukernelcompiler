@@ -1,0 +1,8 @@
+def batchnorm(x, gamma, beta, running_mean, running_var) -> (out) {
+    tensor.sub(x, running_mean) -> centered
+    tensor.add(running_var, 1e-5) -> var_eps
+    tensor.sqrt(var_eps)   -> std
+    tensor.div(centered, std) -> normalized
+    tensor.mul(normalized, gamma) -> scaled
+    tensor.add(scaled, beta) -> out
+}

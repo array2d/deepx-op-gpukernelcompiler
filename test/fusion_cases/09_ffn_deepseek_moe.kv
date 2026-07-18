@@ -1,0 +1,10 @@
+def moe_ffn(x, Wg, bg, W1, b1, W2, b2) -> (out) {
+    tensor.matmul(x, Wg)  -> router_logits
+    tensor.add(router_logits, bg) -> router_scores
+    tensor.softmax(router_scores) -> router_probs
+    tensor.matmul(x, W1)  -> expert_out
+    tensor.add(expert_out, b1) -> expert_biased
+    tensor.mul(expert_biased, router_probs) -> weighted
+    tensor.matmul(weighted, W2) -> o1
+    tensor.add(o1, b2)    -> out
+}

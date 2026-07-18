@@ -1,0 +1,8 @@
+def lora_forward(x, W, b, A, B, alpha) -> (out) {
+    tensor.matmul(x, W)   -> base
+    tensor.add(base, b)   -> base_biased
+    tensor.matmul(x, A)   -> lora_down
+    tensor.matmul(lora_down, B) -> lora_up
+    tensor.mul(lora_up, alpha)  -> lora_scaled
+    tensor.add(base_biased, lora_scaled) -> out
+}

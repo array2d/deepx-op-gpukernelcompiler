@@ -1,0 +1,7 @@
+def depthwise_conv(x, W, b, Wp, bp) -> (out) {
+    tensor.conv2d_dw(x, W) -> d1
+    tensor.add(d1, b)      -> d2
+    tensor.relu(d2)        -> d3
+    tensor.conv2d(d3, Wp)  -> p1
+    tensor.add(p1, bp)     -> out
+}

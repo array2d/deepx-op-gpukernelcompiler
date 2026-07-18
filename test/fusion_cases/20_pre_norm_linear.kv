@@ -1,0 +1,13 @@
+def pre_norm_linear(x, gamma, beta, W, b) -> (out) {
+    tensor.mean(x)        -> mu
+    tensor.sub(x, mu)     -> centered
+    tensor.square(centered) -> sq
+    tensor.mean(sq)       -> var
+    tensor.add(var, 1e-5) -> var_eps
+    tensor.rsqrt(var_eps) -> inv_std
+    tensor.mul(centered, inv_std) -> normed
+    tensor.mul(normed, gamma) -> scaled
+    tensor.add(scaled, beta) -> ln_out
+    tensor.matmul(ln_out, W) -> m1
+    tensor.add(m1, b)    -> out
+}

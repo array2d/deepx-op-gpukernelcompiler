@@ -1,0 +1,5 @@
+def linear_relu(x, W, b) -> (out) {
+    tensor.matmul(x, W) -> tmp
+    tensor.add(tmp, b)  -> tmp2
+    tensor.relu(tmp2)   -> out
+}

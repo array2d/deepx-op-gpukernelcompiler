@@ -1,0 +1,10 @@
+def ffn_gated(x, Wg, bg, Wu, bu, Wo, bo) -> (out) {
+    tensor.matmul(x, Wg)   -> g1
+    tensor.add(g1, bg)     -> gate
+    tensor.silu(gate)      -> gate_act
+    tensor.matmul(x, Wu)   -> u1
+    tensor.add(u1, bu)     -> up
+    tensor.mul(gate_act, up) -> gated
+    tensor.matmul(gated, Wo) -> o1
+    tensor.add(o1, bo)     -> out
+}

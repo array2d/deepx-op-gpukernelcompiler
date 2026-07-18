@@ -1,0 +1,6 @@
+// 简单前向推理: matmul → add → relu
+def inference(x, W, b) -> (out) {
+    tensor.matmul(x, W) -> tmp1
+    tensor.add(tmp1, b) -> tmp2
+    tensor.relu(tmp2)  -> out
+}

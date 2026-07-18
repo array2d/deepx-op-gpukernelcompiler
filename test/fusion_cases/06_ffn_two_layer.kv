@@ -1,0 +1,7 @@
+def ffn_two_layer(x, W1, b1, W2, b2) -> (out) {
+    tensor.matmul(x, W1)  -> h1
+    tensor.add(h1, b1)    -> h2
+    tensor.relu(h2)       -> h3
+    tensor.matmul(h3, W2) -> h4
+    tensor.add(h4, b2)    -> out
+}

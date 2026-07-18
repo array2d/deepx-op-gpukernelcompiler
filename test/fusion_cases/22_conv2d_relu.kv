@@ -1,0 +1,5 @@
+def conv2d_relu(x, W, b) -> (out) {
+    tensor.conv2d(x, W) -> tmp
+    tensor.add(tmp, b)  -> tmp2
+    tensor.relu(tmp2)   -> out
+}

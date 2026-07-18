@@ -1,0 +1,4 @@
+def attention_softmax(scores, mask) -> (probs) {
+    tensor.add(scores, mask) -> masked
+    tensor.softmax(masked)   -> probs
+}

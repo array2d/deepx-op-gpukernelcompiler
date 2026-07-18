@@ -1,0 +1,8 @@
+def rmsnorm(x, gamma) -> (out) {
+    tensor.square(x)     -> sq
+    tensor.mean(sq)      -> ms
+    tensor.add(ms, 1e-6) -> ms_eps
+    tensor.rsqrt(ms_eps) -> inv_rms
+    tensor.mul(x, inv_rms) -> normalized
+    tensor.mul(normalized, gamma) -> out
+}

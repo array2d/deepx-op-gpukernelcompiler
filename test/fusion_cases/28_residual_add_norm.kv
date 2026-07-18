@@ -1,0 +1,9 @@
+def residual_add_norm(x, sublayer_out, gamma) -> (out) {
+    tensor.add(x, sublayer_out) -> residual
+    tensor.square(residual)     -> sq
+    tensor.mean(sq)             -> ms
+    tensor.add(ms, 1e-6)        -> ms_eps
+    tensor.rsqrt(ms_eps)        -> inv_rms
+    tensor.mul(residual, inv_rms) -> normed
+    tensor.mul(normed, gamma)   -> out
+}

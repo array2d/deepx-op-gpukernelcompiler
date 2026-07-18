@@ -1,0 +1,10 @@
+def conv_bn_relu(x, W, gamma, beta, rm, rv) -> (out) {
+    tensor.conv2d(x, W)   -> tmp
+    tensor.sub(tmp, rm)   -> centered
+    tensor.add(rv, 1e-5)  -> var_eps
+    tensor.rsqrt(var_eps) -> inv_std
+    tensor.mul(centered, inv_std) -> normed
+    tensor.mul(normed, gamma) -> scaled
+    tensor.add(scaled, beta) -> bn_out
+    tensor.relu(bn_out)  -> out
+}

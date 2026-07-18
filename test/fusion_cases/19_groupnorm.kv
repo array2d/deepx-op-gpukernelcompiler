@@ -1,0 +1,12 @@
+def groupnorm(x, gamma, beta, G) -> (out) {
+    tensor.reshape(x, G) -> grouped
+    tensor.mean(grouped) -> mu
+    tensor.sub(grouped, mu) -> centered
+    tensor.square(centered) -> sq
+    tensor.mean(sq)      -> var
+    tensor.add(var, 1e-5) -> var_eps
+    tensor.sqrt(var_eps) -> std
+    tensor.div(centered, std) -> normalized
+    tensor.mul(normalized, gamma) -> scaled
+    tensor.add(scaled, beta) -> out
+}

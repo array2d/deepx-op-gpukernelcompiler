@@ -1,0 +1,9 @@
+def resnet_block(x, W1, b1, W2, b2) -> (out) {
+    tensor.conv2d(x, W1)  -> c1
+    tensor.add(c1, b1)    -> c2
+    tensor.relu(c2)       -> c3
+    tensor.conv2d(c3, W2) -> c4
+    tensor.add(c4, b2)    -> c5
+    tensor.add(c5, x)     -> out
+    tensor.relu(out)      -> out2
+}

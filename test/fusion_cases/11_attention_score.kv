@@ -1,0 +1,4 @@
+def attention_score(Q, K, scale) -> (scores) {
+    tensor.matmul(Q, K)  -> raw
+    tensor.mul(raw, scale) -> scores
+}

@@ -1,0 +1,4 @@
+def cross_entropy(logits, labels) -> (loss) {
+    tensor.log_softmax(logits) -> log_probs
+    tensor.nll_loss(log_probs, labels) -> loss
+}

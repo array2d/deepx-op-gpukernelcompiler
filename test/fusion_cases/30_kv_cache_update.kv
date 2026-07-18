@@ -1,0 +1,8 @@
+def kv_cache_update(x, Wk, bk, Wv, bv, cache_k, cache_v, pos) -> (new_k, new_v) {
+    tensor.matmul(x, Wk)  -> k_new
+    tensor.add(k_new, bk) -> k_biased
+    tensor.matmul(x, Wv)  -> v_new
+    tensor.add(v_new, bv) -> v_biased
+    tensor.scatter(cache_k, k_biased, pos) -> new_k
+    tensor.scatter(cache_v, v_biased, pos) -> new_v
+}

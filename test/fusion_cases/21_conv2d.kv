@@ -1,0 +1,4 @@
+def conv2d(x, W, b) -> (out) {
+    tensor.conv2d(x, W) -> tmp
+    tensor.add(tmp, b)  -> out
+}

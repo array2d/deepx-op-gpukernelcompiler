@@ -1,0 +1,11 @@
+def layernorm(x, gamma, beta) -> (out) {
+    tensor.mean(x)       -> mu
+    tensor.sub(x, mu)    -> centered
+    tensor.square(centered) -> sq
+    tensor.mean(sq)      -> var
+    tensor.add(var, 1e-5) -> var_eps
+    tensor.sqrt(var_eps) -> std
+    tensor.div(centered, std) -> normalized
+    tensor.mul(normalized, gamma) -> scaled
+    tensor.add(scaled, beta) -> out
+}

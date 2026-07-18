@@ -1,0 +1,12 @@
+def mha_forward(x, Wq, bq, Wk, bk, Wv, bv, Wo, bo) -> (out) {
+    tensor.matmul(x, Wq)  -> Q
+    tensor.add(Q, bq)     -> Qb
+    tensor.matmul(x, Wk)  -> K
+    tensor.add(K, bk)     -> Kb
+    tensor.matmul(Qb, Kb) -> scores
+    tensor.softmax(scores) -> attn
+    tensor.matmul(attn, Wv) -> V
+    tensor.add(V, bv)     -> Vb
+    tensor.matmul(Vb, Wo) -> o1
+    tensor.add(o1, bo)    -> out
+}

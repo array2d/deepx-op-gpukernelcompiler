@@ -1,0 +1,8 @@
+def qkv_projection(x, Wq, bq, Wk, bk, Wv, bv) -> (Q, K, V) {
+    tensor.matmul(x, Wq) -> q1
+    tensor.add(q1, bq)   -> Q
+    tensor.matmul(x, Wk) -> k1
+    tensor.add(k1, bk)   -> K
+    tensor.matmul(x, Wv) -> v1
+    tensor.add(v1, bv)   -> V
+}

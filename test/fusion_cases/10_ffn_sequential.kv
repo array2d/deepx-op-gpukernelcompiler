@@ -1,0 +1,10 @@
+def ffn_sequential(x, W1, b1, W2, b2, W3, b3) -> (out) {
+    tensor.matmul(x, W1)  -> h1
+    tensor.add(h1, b1)    -> h2
+    tensor.gelu(h2)       -> h3
+    tensor.matmul(h3, W2) -> h4
+    tensor.add(h4, b2)    -> h5
+    tensor.gelu(h5)       -> h6
+    tensor.matmul(h6, W3) -> h7
+    tensor.add(h7, b3)    -> out
+}
